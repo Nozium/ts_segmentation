@@ -1,0 +1,10 @@
+{
+    "recommendations": [
+        "mhutchie.git-graph",
+        "ms-python.vscode-pylance",
+        "njpwerner.autodocstring",
+        "adam-bender.commit-message-editor",
+        "shardulm94.trailing-spaces",
+        "GitHub.vscode-pull-request-github",
+    ]
+}
