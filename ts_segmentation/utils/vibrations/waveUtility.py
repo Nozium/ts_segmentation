@@ -8,10 +8,12 @@ __all__ = [
     "zscore",
     "partial_zscore",
     "mutual_information",
+    "extract_pp_wave",
+    "square_of_heart_beat",
 ]
 
 
-def series2wave(series, offset=0, Hz=200, start=0):
+def series2wave(series, offset=0, Hz=500, start=0):
     """
     Convert a time series to a wave.
 
@@ -29,7 +31,7 @@ def series2wave(series, offset=0, Hz=200, start=0):
     return [time, ampl]
 
 
-def lowpass(input_wave, cutoff, numtaps=255, fs=200):
+def lowpass(input_wave, cutoff, numtaps=255, fs=500):
     """
     Apply a low-pass filter to a wave.
 
@@ -51,7 +53,7 @@ def lowpass(input_wave, cutoff, numtaps=255, fs=200):
     return output_wave
 
 
-def bandpass(input_wave, fe1, fe2, numtaps=255, fs=200):
+def bandpass(input_wave, fe1, fe2, numtaps=255, fs=500):
     """
     Apply a band-pass filter to a wave.
 
@@ -72,6 +74,26 @@ def bandpass(input_wave, fe1, fe2, numtaps=255, fs=200):
     b = signal.firwin(numtaps, [fe1, fe2], pass_zero=False)  # Band-pass
     output_wave = signal.lfilter(b, 1, input_wave)
     return output_wave
+
+
+def notch(
+    input_wave, fe: float = 50.0, numtaps: int = 255, fs: int = 500, Q: int = 30.0
+):
+    """
+    Apply a notch filter to a wave.
+
+    Args:
+        input_wave (list): The wave to be filtered.
+        fe (float): The cutoff frequency of the filter.
+        numtaps (int): The number of filter coefficients. Default is 255.
+        fs (int): The sampling frequency of the wave. Default is 200.
+
+    Returns:
+        list: The filtered wave.
+    """
+    b, a = signal.iirnotch(fe, Q, fs)
+    filtered = signal.lfilter(b, a, input_wave)
+    return filtered
 
 
 def zscore(x, axis=None):
@@ -139,3 +161,45 @@ def mutual_information(X, Y, bins=10):
 
     # print(elem,dx,dy)
     return np.sum(elem * dx * dy), p_xy, p_x_y
+
+
+def extract_pp_wave(
+    input_wave,
+    fs: int = 500,
+    band_path_filter=(0.5, 20),
+    diff_filter=np.array([1, 0, -1]),
+    heart_beat_filter=(0.5, 9),
+):
+    """static heart beat extraction filter. similar to TMD.
+    ref : https://www.mlit.go.jp/sogoseisaku/safety/content/001313797.pdf
+
+    Args:
+        input_wave (np.ndarray): vibration sensor data
+        fs (int, optional): sampling frequency. Defaults to 500.
+        band_path_filter (tuple, optional): band path filter. Defaults to (0.5, 20).
+        diff_filter (np.ndarray, optional): diff filter. Defaults to np.array([1, 0, -1]).
+        heart_beat_filter (tuple, optional): heart beat filter. Defaults to (0.5, 9).
+
+    Returns:
+        np.ndarray: heart beat waveform
+    """
+    # バンドパスフィルタを適用する
+    b, a = signal.butter(4, band_path_filter, btype="bandpass", fs=fs)
+    filtered_wave = signal.filtfilt(b, a, input_wave)
+
+    # 微分フィルタを適用する
+    pp_wave = signal.convolve(filtered_wave, diff_filter, mode="same")
+
+    # 半波整流を適用する
+    denoise_pp_wave = np.abs(pp_wave)
+
+    # 帯域制限を適用する
+    b, a = signal.butter(4, heart_beat_filter, btype="bandpass", fs=fs)
+    heart_beat_wave = signal.filtfilt(b, a, denoise_pp_wave)
+    return heart_beat_wave
+
+
+def square_of_heart_beat(heart_beat_wave: np.ndarray):
+    # heart_beat_waveのヒルベルト変換後の積分値を計算
+    hilbert_wave = np.abs(signal.hilbert(heart_beat_wave))
+    return np.sum(hilbert_wave)

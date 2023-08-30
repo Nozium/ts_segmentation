@@ -110,18 +110,67 @@ def detect_by_anormaly_retio(
 
 def detect_by_static_filter(
     x: np.ndarray,
-    filters: list[dict[str, str | float]] = [
-        {
-            "name": "bress",
-            "high": 0.5,
-            "low": 0.05,
-        },
-        {
-            "name": "heart_beat",
-            "high": 0.5,
-            "low": 0.05,
-        },
-    ],
+    fs: int = 500,
     ths_static_filter: float = 0.1,
 ):
-    pass
+    """
+    Detects whether a user is present in the input signal using a static filter.
+
+    Args:
+        x (np.ndarray): The input signal.
+        fs (int, optional): The sampling frequency of the input signal. Defaults to 500.
+        ths_static_filter (float, optional): The threshold for the static filter. Defaults to 0.1.
+
+    Returns:
+        Tuple[bool, float]: A tuple containing a boolean indicating whether a user is present in the input signal,
+        and the square value of the heart beat wave.
+    """
+    from ts_segmentation.utils.vibrations.waveUtility import (
+        extract_pp_wave,
+        square_of_heart_beat,
+    )
+
+    heart_beat_wave = extract_pp_wave(x, fs=fs)
+    square_value = square_of_heart_beat(heart_beat_wave)
+    is_user_in = square_value > ths_static_filter
+    return is_user_in, square_value
+
+
+def detect_by_fft_ratio(
+    x: np.ndarray,
+    fs: int = 500,
+    peak_order: int = 1,
+    heart_freq_range: tuple[float, float] = (0.8, 4.0),
+    ths_fft_amp: float = 0.1,
+    ths_fft_ratio: float = 0.1,
+):
+    # signalに対してfftを実行
+    fft_x = np.fft.fft(x)
+    fft_x_abs = np.abs(fft_x)
+    # fft amp の計算
+    fft_x_abs_amp = fft_x_abs / len(fft_x_abs) * 2
+
+    # fft amp に含まれるすべての周波数ピークの取得
+    from scipy import signal
+
+    fft_x_abs_amp_peaks = signal.argrelmax(fft_x_abs_amp, order=peak_order)
+
+    # fft peak id を freq に変換しampでソート
+    freq_peaks = [
+        {"freq": p / len(fft_x_abs_amp) * fs, "value": fft_x_abs_amp[p]}
+        for p in fft_x_abs_amp_peaks[0]
+    ]
+    freq_peaks = sorted(freq_peaks, key=lambda x: x["value"], reverse=True)
+
+    # 心拍数の周波数帯域のピークのみを抽出
+    heart_freq_peaks = [
+        p["value"]
+        for p in freq_peaks
+        if heart_freq_range[0] <= p["freq"] <= heart_freq_range[1]
+    ]
+    # 検出された心拍周波数帯域のピークが閾値を超えている割合を計算
+    heart_freq_peaks_ratio = sum(
+        [int(p > ths_fft_amp) for p in heart_freq_peaks]
+    ) / len(heart_freq_peaks)
+    is_user_in = heart_freq_peaks_ratio > ths_fft_ratio
+    return is_user_in, heart_freq_peaks_ratio
