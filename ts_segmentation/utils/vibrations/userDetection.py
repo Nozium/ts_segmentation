@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import statsmodels.api as sm
 from pydantic import BaseModel
@@ -168,9 +170,125 @@ def detect_by_fft_ratio(
         for p in freq_peaks
         if heart_freq_range[0] <= p["freq"] <= heart_freq_range[1]
     ]
-    # 検出された心拍周波数帯域のピークが閾値を超えている割合を計算
-    heart_freq_peaks_ratio = sum(
-        [int(p > ths_fft_amp) for p in heart_freq_peaks]
-    ) / len(heart_freq_peaks)
-    is_user_in = heart_freq_peaks_ratio > ths_fft_ratio
+    if len(heart_freq_peaks) > 0:
+        # 検出された心拍周波数帯域のピークが閾値を超えている割合を計算
+        heart_freq_peaks_ratio = sum(
+            [int(p > ths_fft_amp) for p in heart_freq_peaks]
+        ) / len(heart_freq_peaks)
+        is_user_in = heart_freq_peaks_ratio > ths_fft_ratio
+    else:
+        heart_freq_peaks_ratio = 0.0
+        is_user_in = False
     return is_user_in, heart_freq_peaks_ratio
+
+
+def batch_detect_test(x: np.ndarray):
+    # apply all detect_by_* functions
+    # return list dict results
+    # [{
+    #   "name":"function_name",
+    #   "is_user_in":bool,
+    #   "value":float,
+    #   "time":float
+    # }]
+    results = []
+    start_time = time.time()
+    acf_user_in, acf_value = detect_by_acf(x)
+    end_time = time.time()
+    results.append(
+        {
+            "name": "detect_by_acf",
+            "is_user_in": acf_user_in,
+            "value": acf_value,
+            "time": end_time - start_time,
+        }
+    )
+
+    start_time = time.time()
+    pacf_user_in, pacf_value = detect_by_pacf(x)
+    end_time = time.time()
+    results.append(
+        {
+            "name": "detect_by_pacf",
+            "is_user_in": pacf_user_in,
+            "value": pacf_value,
+            "time": end_time - start_time,
+        }
+    )
+
+    start_time = time.time()
+    std_user_in, std_value = detect_by_std(x)
+    end_time = time.time()
+    results.append(
+        {
+            "name": "detect_by_std",
+            "is_user_in": std_user_in,
+            "value": std_value,
+            "time": end_time - start_time,
+        }
+    )
+
+    start_time = time.time()
+    anormaly_user_in, anormaly_value = detect_by_anormaly_retio(x)
+    end_time = time.time()
+    results.append(
+        {
+            "name": "detect_by_anormaly_retio",
+            "is_user_in": anormaly_user_in,
+            "value": anormaly_value,
+            "time": end_time - start_time,
+        }
+    )
+
+    start_time = time.time()
+    static_user_in, static_value = detect_by_static_filter(x)
+    end_time = time.time()
+    results.append(
+        {
+            "name": "detect_by_static_filter",
+            "is_user_in": static_user_in,
+            "value": static_value,
+            "time": end_time - start_time,
+        }
+    )
+
+    start_time = time.time()
+    fft_user_in, fft_value = detect_by_fft_ratio(x)
+    end_time = time.time()
+    results.append(
+        {
+            "name": "detect_by_fft_ratio",
+            "is_user_in": fft_user_in,
+            "value": fft_value,
+            "time": end_time - start_time,
+        }
+    )
+
+    return results
+
+
+if __name__ == "__main__":
+    # test
+    noise = np.random.normal(0, 1, 500)
+
+    test_freqs = [0.5, 1, 3, 5, 10, 30]
+
+    for freq in test_freqs:
+        # 正弦波を生成
+        random_sin_data = np.sin(np.linspace(0, freq * 2 * np.pi, 500))
+        random_sin_data = (random_sin_data + noise) / 2
+
+        results = batch_detect_test(random_sin_data)
+        print(f"{freq}Hz sin wave")
+        for r in results:
+            print("   ", r)
+
+    # multi sin wave
+    multi_sin_data = np.sin(np.linspace(0, 0.5 * 2 * np.pi, 500)) + np.sin(
+        np.linspace(0, 4 * 2 * np.pi, 500)
+    )
+    multi_sin_data = (multi_sin_data + noise) / 2
+    results = batch_detect_test(multi_sin_data)
+    print(f"multi sin wave 0.5Hz + 4Hz")
+    for r in results:
+        print("   ", r)
